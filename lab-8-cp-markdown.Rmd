@@ -68,6 +68,155 @@ leaflet(oil_sf) %>%
 ```
 
 
+## tmap plot with the Texas state shapefile
+
+```{r}
+#need to load state boundary files, easy because in working directory
+
+states <- st_read(dsn = ".", layer = "states")
+#treat information as a data frame
+
+tex_border <- states %>% 
+  filter(STATE_NAME == "Texas") %>% 
+  st_transform(4326)
+
+plot(tex_border)
+
+tm_shape(tex_border) +
+  tm_polygons() +
+  tm_shape(oil_sf) +
+  tm_dots(size = 0.3)
+
+```
+
+Are these spatially random? Or are these non-random locations? Does this point pattern follow CRS?
+
+
+###Convert the data to spatial points patterns
+(combination of point data and the bounding window)
+
+```{r}
+
+spill_sp <- as(oil_sf, "Spatial")
+spill_ppp <-as(spill_sp, "ppp") #point pattern analysis
+
+tx_sp <- as(tex_border, "Spatial")
+tx_owin <- as(tx_sp, "owin") #specify as window for point pattern analysis
+#still need to put together
+
+all_ppp <- ppp(spill_ppp$x, spill_ppp$y, window = tx_owin)
+#omits points that don't align between window and point pattern
+
+```
+
+
+###A density plot:
+```{r}
+plot(density(all_ppp, sigma = 0.4))
+```
+
+Density plots are easy to make, but depending on decision making can drastically change the story. For example, changing the sigma value greatly changes the plot. Need to have a meaningful way of deciding the bandwidth (sigma)
+
+```{r}
+plot(density(all_ppp, sigma = 0.1))
+```
+
+
+
+
+###Quadrant test for spatial evenness
+
+```{r}
+oil_qt <- quadrat.test(all_ppp, nx = 5, ny = 5) #pick quadrant size, arbitrary so very dangerous, in this case makes 5 regions and calculates the intensity with chi squared to test if it is even or not
+oil_qt #Data are not spatially evenly distributed because p < 0.05
+```
+
+Doesn't look like CSR but not obvious visually. See strong clustering in some areas. Also have large blank areas.
+
+Test null hypothesist of CSR (null is that point data follow CSR)
+
+Based on test, reject null hypothesis that data follow CSR. Accept alternative hypothesis that data do not follow CSR (this means that they are not evenly distributed)
+
+
+```{r}
+plot(all_ppp)
+#add actual quadrat test info
+plot(oil_qt, add = TRUE, cex = 0.4)
+```
+
+
+If have data that is more clustered than CSR, then are nearest neighbors closer together or further apart on average? CLOSER
+
+
+Graph of distance (r) and proportion of pairs within distance (r), have higher proportion of pairs within shorter distance if more clustered than CSR; if more even than CSR then have fewer point pairs within short distances of each other
+
+Can think about this in two ways:
+Single, closest nearest neighbor -> use g function
+L&K function -> draw increasing bubbles around each point to see density of neighbors as bubble gets larger to increase more observations
+
+###G-Function for Nearest Neighbor Analysis
+
+```{r}
+r <- seq(0,1, by = 0.01)
+
+oil_gfun <- envelope(all_ppp, fun = Gest, r = r, nsim = 100) #give distances over which will calculate proportion of points that we are calling r, run 100 simulations for CSR
+#Fast for G function because only looking at nearest neighbor, more computational power needed for L and K function
+#theo = theoretical values based on simulation
+#runs simulation for CSR data
+
+```
+What would data look like if truly CSR? Compare data to that 
+
+
+Plot data
+```{r}
+ggplot(oil_gfun, aes(x = r, y = obs)) + 
+  geom_line(color = "black") +
+  geom_line(aes(x = r, y = theo), color = "red") #compare to CSR
+```
+Our observed data have a higher proportion of point pairs of nearest neighbors at shorter distances than CSR data -> Data more clustered than modeled CSR data, not truly randomly distributed
+
+r depends on coordinates you are using
+WSG84 has degrees, so this would be looking at r being within 1 degree
+
+Instead of using a single nearest neighbor, consider concentrations around a point
+
+
+###Nearest neighbor using the L-function (Ripley's K standardized)
+
+Similar to using G function
+
+```{r}
+r2 <- seq(0,3, by = 0.5) #increment large to save time
+
+oil_lfun <- envelope(all_ppp, fun = Lest, r = r2, nsim = 20, global = TRUE) #because computationally more intensive, running fewer simulations, increases bubble size until covers all observations, global = TRUE to include all observations
+
+```
+
+
+Create a plot
+```{r}
+ggplot(oil_lfun, aes(x = r2, y = obs)) +
+  geom_line(color = "black") +
+  geom_line(aes(x=r2, y = theo), color = "blue")
+```
+
+
+Could calculate maximum nearest neighbor distance to get a starting point, or just play around to get correct size or r2 sequence
+
+Get back to github
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
